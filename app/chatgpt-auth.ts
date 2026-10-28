@@ -51,12 +51,16 @@ export async function requireChatGPTUser(
 }
 
 export function isSiteAuditAdmin(user: ChatGPTUser): boolean {
-  const configuredAdmin = process.env.SITEAUDIT_ADMIN_EMAIL?.trim().toLowerCase();
-  return Boolean(configuredAdmin && user.email.trim().toLowerCase() === configuredAdmin);
+  return isConfiguredAdminEmail(user.email);
 }
 
 export function isSiteAuditAdminConfigured(): boolean {
   return Boolean(process.env.SITEAUDIT_ADMIN_EMAIL?.trim());
+}
+
+export function isConfiguredAdminEmail(email: string): boolean {
+  const configuredAdmin = process.env.SITEAUDIT_ADMIN_EMAIL?.trim().toLowerCase();
+  return Boolean(configuredAdmin && email.trim().toLowerCase() === configuredAdmin);
 }
 
 export function chatGPTSignInPath(returnTo: string): string {

@@ -1,10 +1,10 @@
 # Security boundaries
 
-## Public mode
+## Public-target audit mode
 
 Permitted operations are conservative HTTP(S) requests to ordinary public resources, response-header inspection, HTML metadata extraction, and bounded link/document discovery.
 
-Public mode must not:
+Public-target audit mode must not:
 
 - Submit forms, create accounts, or authenticate
 - Guess directories or enumerate services
@@ -12,6 +12,10 @@ Public mode must not:
 - Scan ports or non-HTTP services
 - Test credentials, passwords, resets, or authorization boundaries
 - Trigger payments, uploads, emails, webhooks, or destructive actions
+
+## Application access boundary
+
+Site visitor access is separate from audit scope. Private Sites access is the first layer, Sites identity plus the administrator allowlist is the second, and the secondary credential with its signed session cookie is the third. A cookie or password alone must never grant access. Login requests use same-origin POSTs, bounded bodies, generic failures, short session lifetime, and best-effort throttling; durable distributed throttling remains a roadmap requirement. Passing this gate grants access to the audit tool only and never authorizes active testing of target websites.
 
 ## Owner and authorized modes
 

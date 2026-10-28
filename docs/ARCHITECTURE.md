@@ -54,6 +54,10 @@ Screenshots and raw artifacts belong in object storage; normalized metadata belo
 
 The application targets OpenAI Sites and Cloudflare Workers through Vinext. The Worker runtime provides HTTP fetch but no raw TCP; this matches the MVP's HTTP-only boundary. The tracked `.openai/hosting.json` is deployment configuration, while secrets remain in the hosted environment store.
 
+### Identity and credential gate
+
+Private Sites access and trusted identity headers form the outer boundary. The configured administrator email must match before the secondary credential endpoint evaluates a password. Successful verification returns a short-lived, HMAC-signed, user-bound HttpOnly cookie. Both server-rendered pages and `/api/audit` validate hosted identity, administrator membership, and the credential session independently. The password hash and signing secret are separate sensitive Sites runtime values; missing configuration fails closed.
+
 ## Evolution
 
 When scans become multi-page or scheduled, move acquisition to isolated queued workers. Keep report generation and rule evaluation deterministic so the same evidence plus rule version produces the same result.

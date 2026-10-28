@@ -1,3 +1,4 @@
+import { isValidAdminSessionToken, readAdminSessionCookie } from "@/app/admin-session";
 import { getChatGPTUser, isSiteAuditAdmin, isSiteAuditAdminConfigured } from "@/app/chatgpt-auth";
 import { defaultSiteProfile, evaluateAudit } from "@/lib/audit";
 import type { AuditFeature, SiteProfile, SiteType } from "@/lib/audit";
@@ -65,13 +66,16 @@ function json(payload: unknown, status = 200): Response {
   });
 }
 
-async function authorizeAdmin(): Promise<Response | null> {
+async function authorizeAdmin(request: Request): Promise<Response | null> {
   const user = await getChatGPTUser();
   if (!user) return json({ ok: false, error: { code: "AUTH_REQUIRED", message: "Sign in to use SiteAudit Pro." } }, 401);
 
   if (!isSiteAuditAdminConfigured()) return json({ ok: false, error: { code: "AUTH_NOT_CONFIGURED", message: "Administrator access is not configured." } }, 503);
   if (!isSiteAuditAdmin(user)) {
     return json({ ok: false, error: { code: "FORBIDDEN", message: "Administrator access is required." } }, 403);
+  }
+  if (!await isValidAdminSessionToken(readAdminSessionCookie(request.headers.get("cookie")), user.userId)) {
+    return json({ ok: false, error: { code: "CREDENTIALS_REQUIRED", message: "Administrator credentials are required." } }, 401);
   }
   return null;
 }
@@ -199,8 +203,8 @@ function mappedSignals(scan: PassivePublicScanResult): Record<string, unknown> {
   };
 }
 
-export async function GET(): Promise<Response> {
-  const denied = await authorizeAdmin();
+export async function GET(request: Request): Promise<Response> {
+  const denied = await authorizeAdmin(request);
   if (denied) return denied;
   return json({
     ok: true,
@@ -218,7 +222,7 @@ export async function GET(): Promise<Response> {
 }
 
 export async function POST(request: Request): Promise<Response> {
-  const denied = await authorizeAdmin();
+  const denied = await authorizeAdmin(request);
   if (denied) return denied;
   const declaredLength = Number(request.headers.get("content-length") ?? "0");
   if (declaredLength > MAX_REQUEST_BYTES) {

@@ -77,7 +77,9 @@ See [Audit methodology](docs/AUDIT_METHODOLOGY.md) and [Report schema](docs/REPO
 
 ## Administrator access
 
-SiteAudit Pro uses Sites-hosted ChatGPT identity. It does not implement or store application passwords. Configure `SITEAUDIT_ADMIN_EMAIL` as a server-side Sites runtime value; the page and audit API both reject signed-in identities that do not match it. Keep real values out of source and local environment files.
+Administrator access is layered: Sites-hosted ChatGPT identity, the configured administrator email, a secondary credential check, and a signed short-lived session cookie. The password is verified only against a salted PBKDF2 hash; plaintext credentials are never stored. The page and audit API enforce the same server-side boundary and fail closed when configuration is missing.
+
+Configure these server-side Sites runtime values and keep their real values out of source: `SITEAUDIT_ADMIN_EMAIL`, `SITEAUDIT_ADMIN_PASSWORD_HASH`, and `SITEAUDIT_SESSION_SECRET`. The secondary credential is defense in depth, not a replacement for Sites identity or per-user MFA.
 
 ## Documentation
 

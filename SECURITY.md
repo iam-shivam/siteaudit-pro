@@ -24,6 +24,16 @@ Report suspected vulnerabilities privately to the project owner through the repo
 
 Never commit credentials, API keys, cookies, scan tokens, or production response bodies. Runtime secrets must use the deployment platform's secret store. Dependency changes require lockfile review, build verification, and a security-impact check.
 
+## Administrator authentication invariants
+
+- Sites identity and the administrator email allowlist remain the primary access boundary; the secondary credential never grants access by itself.
+- Only a salted PBKDF2 password record and a separate cookie-signing secret may be stored in Sites runtime secrets. Plaintext credentials, password records, session tokens, and signing material must never be logged or committed.
+- Successful verification creates a user-bound, HMAC-signed `__Host-` cookie with `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/`, and an absolute short expiry.
+- Every protected page, API route, and future server action must validate both the hosted identity and the signed credential session. Missing or malformed configuration fails closed.
+- Login failures are generic and throttled. The current in-memory throttle is best-effort per Worker isolate; the private Sites allowlist remains the primary brute-force boundary until durable throttling is added.
+- Logout clears the credential cookie and ends the hosted Sites session. Rotate the signing secret whenever the password record changes to invalidate existing sessions.
+- The credential gate protects access to SiteAudit Pro; it does not authorize active testing against any target website.
+
 ## Supported versions
 
 During MVP development, only the most recently deployed version is supported. Security fixes should be deployed promptly and recorded in release notes.

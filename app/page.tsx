@@ -1,3 +1,7 @@
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+
+import { ADMIN_SESSION_COOKIE, isValidAdminSessionToken } from "./admin-session";
 import { chatGPTSignOutPath, isSiteAuditAdmin, requireChatGPTUser } from "./chatgpt-auth";
 import SiteAuditClient from "./site-audit-client";
 
@@ -10,7 +14,10 @@ export default async function Home() {
     return <AccessDenied email={user.email} signOutPath={chatGPTSignOutPath("/")} />;
   }
 
-  return <SiteAuditClient adminName={user.displayName} signOutPath={chatGPTSignOutPath("/")} />;
+  const cookieStore = await cookies();
+  if (!await isValidAdminSessionToken(cookieStore.get(ADMIN_SESSION_COOKIE)?.value, user.userId)) redirect("/login");
+
+  return <SiteAuditClient adminName={user.displayName} />;
 }
 
 function AccessDenied({ email, signOutPath }: { email: string; signOutPath: string }) {
