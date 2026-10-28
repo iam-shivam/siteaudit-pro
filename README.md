@@ -75,6 +75,10 @@ Every check has an applicability outcome, result status, evidence strength, time
 
 See [Audit methodology](docs/AUDIT_METHODOLOGY.md) and [Report schema](docs/REPORT_SCHEMA.md).
 
+## Administrator access
+
+SiteAudit Pro uses Sites-hosted ChatGPT identity. It does not implement or store application passwords. Configure `SITEAUDIT_ADMIN_EMAIL` as a server-side Sites runtime value; the page and audit API both reject signed-in identities that do not match it. Keep real values out of source and local environment files.
+
 ## Documentation
 
 - [Product requirements](docs/PRODUCT_REQUIREMENTS.md)

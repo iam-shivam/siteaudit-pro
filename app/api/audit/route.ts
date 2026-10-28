@@ -1,3 +1,4 @@
+import { getChatGPTUser } from "@/app/chatgpt-auth";
 import { defaultSiteProfile, evaluateAudit } from "@/lib/audit";
 import type { AuditFeature, SiteProfile, SiteType } from "@/lib/audit";
 import {
@@ -62,6 +63,18 @@ function json(payload: unknown, status = 200): Response {
       "x-content-type-options": "nosniff",
     },
   });
+}
+
+async function authorizeAdmin(): Promise<Response | null> {
+  const user = await getChatGPTUser();
+  if (!user) return json({ ok: false, error: { code: "AUTH_REQUIRED", message: "Sign in to use SiteAudit Pro." } }, 401);
+
+  const configuredAdmin = process.env.SITEAUDIT_ADMIN_EMAIL?.trim().toLowerCase();
+  if (!configuredAdmin) return json({ ok: false, error: { code: "AUTH_NOT_CONFIGURED", message: "Administrator access is not configured." } }, 503);
+  if (user.email.trim().toLowerCase() !== configuredAdmin) {
+    return json({ ok: false, error: { code: "FORBIDDEN", message: "Administrator access is required." } }, 403);
+  }
+  return null;
 }
 
 function cleanString(value: unknown, maxLength: number): string | undefined {
@@ -188,6 +201,8 @@ function mappedSignals(scan: PassivePublicScanResult): Record<string, unknown> {
 }
 
 export async function GET(): Promise<Response> {
+  const denied = await authorizeAdmin();
+  if (denied) return denied;
   return json({
     ok: true,
     service: "SiteAudit Pro passive scanner",
@@ -204,6 +219,8 @@ export async function GET(): Promise<Response> {
 }
 
 export async function POST(request: Request): Promise<Response> {
+  const denied = await authorizeAdmin();
+  if (denied) return denied;
   const declaredLength = Number(request.headers.get("content-length") ?? "0");
   if (declaredLength > MAX_REQUEST_BYTES) {
     return json({ ok: false, error: { code: "REQUEST_TOO_LARGE", message: "The audit request is too large." } }, 413);
