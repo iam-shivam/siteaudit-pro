@@ -1,18 +1,16 @@
-import { chatGPTSignOutPath, requireChatGPTUser } from "./chatgpt-auth";
+import { chatGPTSignOutPath, isSiteAuditAdmin, requireChatGPTUser } from "./chatgpt-auth";
 import SiteAuditClient from "./site-audit-client";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const user = await requireChatGPTUser("/");
-  const configuredAdmin = process.env.SITEAUDIT_ADMIN_EMAIL?.trim().toLowerCase();
-  const isAdmin = Boolean(configuredAdmin && user.email.trim().toLowerCase() === configuredAdmin);
 
-  if (!isAdmin) {
+  if (!isSiteAuditAdmin(user)) {
     return <AccessDenied email={user.email} signOutPath={chatGPTSignOutPath("/")} />;
   }
 
-  return <SiteAuditClient adminName={user.displayName} adminEmail={user.email} signOutPath={chatGPTSignOutPath("/")} />;
+  return <SiteAuditClient adminName={user.displayName} signOutPath={chatGPTSignOutPath("/")} />;
 }
 
 function AccessDenied({ email, signOutPath }: { email: string; signOutPath: string }) {

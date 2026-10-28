@@ -1,4 +1,4 @@
-import { getChatGPTUser } from "@/app/chatgpt-auth";
+import { getChatGPTUser, isSiteAuditAdmin, isSiteAuditAdminConfigured } from "@/app/chatgpt-auth";
 import { defaultSiteProfile, evaluateAudit } from "@/lib/audit";
 import type { AuditFeature, SiteProfile, SiteType } from "@/lib/audit";
 import {
@@ -69,9 +69,8 @@ async function authorizeAdmin(): Promise<Response | null> {
   const user = await getChatGPTUser();
   if (!user) return json({ ok: false, error: { code: "AUTH_REQUIRED", message: "Sign in to use SiteAudit Pro." } }, 401);
 
-  const configuredAdmin = process.env.SITEAUDIT_ADMIN_EMAIL?.trim().toLowerCase();
-  if (!configuredAdmin) return json({ ok: false, error: { code: "AUTH_NOT_CONFIGURED", message: "Administrator access is not configured." } }, 503);
-  if (user.email.trim().toLowerCase() !== configuredAdmin) {
+  if (!isSiteAuditAdminConfigured()) return json({ ok: false, error: { code: "AUTH_NOT_CONFIGURED", message: "Administrator access is not configured." } }, 503);
+  if (!isSiteAuditAdmin(user)) {
     return json({ ok: false, error: { code: "FORBIDDEN", message: "Administrator access is required." } }, 403);
   }
   return null;

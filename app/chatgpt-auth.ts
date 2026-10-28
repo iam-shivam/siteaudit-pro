@@ -1,3 +1,5 @@
+import "server-only";
+
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -46,6 +48,15 @@ export async function requireChatGPTUser(
   if (user) return user;
 
   redirect(chatGPTSignInPath(returnTo));
+}
+
+export function isSiteAuditAdmin(user: ChatGPTUser): boolean {
+  const configuredAdmin = process.env.SITEAUDIT_ADMIN_EMAIL?.trim().toLowerCase();
+  return Boolean(configuredAdmin && user.email.trim().toLowerCase() === configuredAdmin);
+}
+
+export function isSiteAuditAdminConfigured(): boolean {
+  return Boolean(process.env.SITEAUDIT_ADMIN_EMAIL?.trim());
 }
 
 export function chatGPTSignInPath(returnTo: string): string {

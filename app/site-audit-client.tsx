@@ -308,11 +308,10 @@ function FindingCard({ finding, index }: { finding: Finding; index: number }) {
 
 export type SiteAuditClientProps = {
   adminName: string;
-  adminEmail: string;
   signOutPath: string;
 };
 
-export default function SiteAuditClient({ adminName, adminEmail, signOutPath }: SiteAuditClientProps) {
+export default function SiteAuditClient({ adminName, signOutPath }: SiteAuditClientProps) {
   const [url, setUrl] = useState("");
   const [profile, setProfile] = useState<FormProfile>(DEFAULT_PROFILE);
   const [expandedSetup, setExpandedSetup] = useState(false);
@@ -411,7 +410,7 @@ export default function SiteAuditClient({ adminName, adminEmail, signOutPath }: 
     <header className="site-header">
       <a className="brand" href="#top" aria-label="SiteAudit Pro home"><span className="brand__mark"><ScanSearch size={18} strokeWidth={2.2} /></span><span className="brand__word">SiteAudit</span><span className="brand__tag">PRO</span></a>
       <nav className="site-nav" aria-label="Primary navigation"><a href="#method">Method</a><a href="#proof">Evidence</a><button type="button" onClick={loadSample}>Sample report</button></nav>
-      <div className="header-actions"><div className="admin-identity" title={adminEmail}><span>Administrator</span><b>{adminName}</b></div><a className="header-signout" href={signOutPath} target="_top">Sign out</a></div>
+      <div className="header-actions"><div className="admin-identity"><span>Administrator</span><b>{adminName}</b></div><a className="header-signout" href={signOutPath} target="_top">Sign out</a></div>
     </header>
 
     <main id="main-content" className="min-h-screen bg-[var(--paper)] text-[var(--ink)]">
