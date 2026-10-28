@@ -84,9 +84,9 @@ const FEATURE_OPTIONS: { key: FeatureKey; label: string; short: string }[] = [
   { key: "userContent", label: "User content", short: "UGC" },
 ];
 const DEFAULT_PROFILE: FormProfile = {
-  siteType: "saas",
+  siteType: "brochure",
   region: "Global / unsure",
-  features: { accounts: true, payments: false, subscriptions: true, uploads: false, api: true, multiTenant: true, ai: false, userContent: false },
+  features: { accounts: false, payments: false, subscriptions: false, uploads: false, api: false, multiTenant: false, ai: false, userContent: false },
 };
 
 const SAMPLE_REPORT: AuditReport = {
@@ -268,22 +268,23 @@ function normalizeReport(raw: Record<string, unknown>, fallbackUrl: string, prof
 
 function ScoreRing({ score, label, tone = "ink" }: { score: number; label: string; tone?: "ink" | "rust" }) {
   const safeScore = Math.min(100, Math.max(0, score));
-  return <div className="score-ring" style={{ "--score": safeScore, "--score-color": tone === "rust" ? "#c44f2c" : "#163f3a" } as CSSProperties}>
+  return <div className="score-ring" role="img" aria-label={`${label} score: ${safeScore} out of 100`} style={{ "--score": safeScore, "--score-color": tone === "rust" ? "#c44f2c" : "#163f3a" } as CSSProperties}>
     <div className="score-ring__inner"><strong>{safeScore}</strong><span>{label}</span></div>
   </div>;
 }
 
-function FeatureToggle({ active, label, short, onClick }: { active: boolean; label: string; short: string; onClick: () => void }) {
+function FeatureToggle({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
   return <button type="button" aria-pressed={active} title={label} onClick={onClick} className={classNames("feature-toggle", active && "feature-toggle--active")}>
-    <span className="feature-toggle__check">{active ? <Check size={13} strokeWidth={3} /> : null}</span><span>{short}</span>
+    <span className="feature-toggle__check">{active ? <Check size={13} strokeWidth={3} /> : null}</span><span>{label}</span>
   </button>;
 }
 
 function FindingCard({ finding, index }: { finding: Finding; index: number }) {
-  const [open, setOpen] = useState(index < 3);
+  const [open, setOpen] = useState(index === 0);
   const isPass = finding.status === "verified-pass";
+  const detailsId = `finding-details-${index}`;
   return <article className={classNames("finding-card", `finding-card--${finding.severity}`, isPass && "finding-card--pass")}>
-    <button className="finding-card__summary" type="button" onClick={() => setOpen((value) => !value)}>
+    <button className="finding-card__summary" type="button" aria-expanded={open} aria-controls={detailsId} onClick={() => setOpen((value) => !value)}>
       <div className="finding-card__number">{String(index + 1).padStart(2, "0")}</div>
       <div className="finding-card__headline">
         <div className="finding-card__meta">
@@ -296,11 +297,11 @@ function FindingCard({ finding, index }: { finding: Finding; index: number }) {
       </div>
       <ChevronDown className={classNames("finding-card__chevron", open && "finding-card__chevron--open")} size={19} />
     </button>
-    <div className={classNames("finding-card__details", !open && "finding-card__details--closed")}>
+    <div id={detailsId} className={classNames("finding-card__details", !open && "finding-card__details--closed")}>
       <div className="finding-detail finding-detail--impact"><span>Why it matters</span><p>{finding.impact}</p></div>
       <div className="finding-detail"><span>Evidence</span><p>{finding.evidence}</p></div>
       <div className="finding-detail finding-detail--solution"><span>Recommended solution</span><p>{finding.recommendation}</p></div>
-      <div className="finding-card__footer"><span>Confidence: {finding.confidence}</span><span>Effort: {finding.effort}</span><span>Owner: {finding.owner}</span>{finding.reference ? <span>{finding.reference}</span> : null}</div>
+      <div className="finding-card__footer"><span>{finding.id}</span><span>Confidence: {finding.confidence}</span><span>Effort: {finding.effort}</span><span>Owner: {finding.owner}</span>{finding.reference ? <span>{finding.reference}</span> : null}</div>
     </div>
   </article>;
 }
@@ -308,7 +309,7 @@ function FindingCard({ finding, index }: { finding: Finding; index: number }) {
 export default function Home() {
   const [url, setUrl] = useState("");
   const [profile, setProfile] = useState<FormProfile>(DEFAULT_PROFILE);
-  const [expandedSetup, setExpandedSetup] = useState(true);
+  const [expandedSetup, setExpandedSetup] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [report, setReport] = useState<AuditReport | null>(null);
@@ -340,6 +341,23 @@ export default function Home() {
     passes: report.findings.filter((finding) => finding.status === "verified-pass").length,
   }), [report]);
 
+  const executiveSummary = useMemo(() => {
+    if (!report) return null;
+    const priorities = [...report.findings]
+      .filter((finding) => finding.status === "verified-issue")
+      .sort((a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity])
+      .slice(0, 3);
+    if (priorities.length < 3) {
+      priorities.push(...report.findings
+        .filter((finding) => ["owner-evidence", "manual-test"].includes(finding.status) && !priorities.some((priority) => priority.id === finding.id))
+        .slice(0, 3 - priorities.length));
+    }
+    if (findingCounts.blockers > 0) return { tone: "danger", label: "Owner review required", detail: `${findingCounts.blockers} high-impact public ${findingCounts.blockers === 1 ? "finding needs" : "findings need"} remediation or formal review.`, priorities };
+    if (report.healthScore < 75) return { tone: "warning", label: "Remediation recommended", detail: "No high-impact blocker was confirmed, but tested controls need improvement.", priorities };
+    if (report.coverageScore < 70) return { tone: "review", label: "Evidence incomplete", detail: "Observed controls look reasonable, but owner-side evidence is still too limited for a launch decision.", priorities };
+    return { tone: "strong", label: "Ready for owner review", detail: "Public evidence is healthy enough to continue into verified-owner and launch-readiness checks.", priorities };
+  }, [report, findingCounts.blockers]);
+
   async function runAudit(event: FormEvent) {
     event.preventDefault(); setError("");
     let targetUrl = url.trim();
@@ -355,14 +373,24 @@ export default function Home() {
         throw new Error(apiMessage ?? "The public scan could not be completed.");
       }
       setReport(normalizeReport((payload.audit ?? payload.report ?? payload) as Record<string, unknown>, targetUrl, profile));
-      window.setTimeout(() => document.getElementById("report")?.scrollIntoView({ behavior: "smooth" }), 80);
+      focusReport();
     } catch (caught) { setError(caught instanceof Error ? caught.message : "The public scan could not be completed."); }
     finally { setLoading(false); }
   }
 
   function loadSample() {
     setError(""); setReport({ ...SAMPLE_REPORT, scannedAt: new Date().toISOString() });
-    window.setTimeout(() => document.getElementById("report")?.scrollIntoView({ behavior: "smooth" }), 80);
+    focusReport();
+  }
+
+  function focusReport() {
+    window.setTimeout(() => {
+      const target = document.getElementById("report");
+      if (!target) return;
+      target.focus({ preventScroll: true });
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      target.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+    }, 80);
   }
 
   function exportJson() {
@@ -372,12 +400,15 @@ export default function Home() {
     anchor.href = href; anchor.download = `siteaudit-${new URL(report.url).hostname}-${report.id}.json`; anchor.click(); URL.revokeObjectURL(href);
   }
 
-  return <main className="min-h-screen bg-[var(--paper)] text-[var(--ink)]">
+  return <>
+    <a className="skip-link" href="#main-content">Skip to main content</a>
     <header className="site-header">
       <a className="brand" href="#top" aria-label="SiteAudit Pro home"><span className="brand__mark"><ScanSearch size={18} strokeWidth={2.2} /></span><span className="brand__word">SiteAudit</span><span className="brand__tag">PRO</span></a>
-      <nav className="site-nav" aria-label="Primary navigation"><a href="#method">Method</a><a href="#safety">Safety</a><a href="#report">Report</a></nav>
-      <div className="header-status"><span /> Passive checks only</div>
+      <nav className="site-nav" aria-label="Primary navigation"><a href="#method">Method</a><a href="#proof">Evidence</a><button type="button" onClick={loadSample}>Sample report</button></nav>
+      <div className="header-actions"><div className="header-status"><span /> Passive checks only</div><a className="header-cta" href="#audit">Start scan</a></div>
     </header>
+
+    <main id="main-content" className="min-h-screen bg-[var(--paper)] text-[var(--ink)]">
 
     <section id="top" className="hero-shell">
       <div className="hero-grid" aria-hidden="true" />
@@ -388,20 +419,24 @@ export default function Home() {
         <div className="hero-proof"><div><strong>40+</strong><span>high-confidence rules</span></div><div><strong>4</strong><span>evidence levels</span></div><div><strong>0</strong><span>intrusive payloads</span></div></div>
       </div>
 
-      <form className="audit-console" onSubmit={runAudit}>
+      <form id="audit" className="audit-console" onSubmit={runAudit}>
         <div className="audit-console__topline"><div><span className="live-dot" /> New public audit</div><span>Safe mode</span></div>
-        <label className="url-field"><Globe2 size={18} /><span className="sr-only">Website URL</span><input type="text" inputMode="url" placeholder="yourwebsite.com" value={url} onChange={(event) => setUrl(event.target.value)} disabled={loading} /></label>
-        <div className="setup-row">
+        <label className="field-caption" htmlFor="audit-url">Public website URL</label>
+        <div className="url-field"><Globe2 size={18} /><input id="audit-url" type="text" inputMode="url" autoComplete="url" aria-describedby="audit-safety-note" aria-invalid={Boolean(error)} aria-errormessage={error ? "audit-url-error" : undefined} placeholder="yourwebsite.com" value={url} onChange={(event) => setUrl(event.target.value)} disabled={loading} /></div>
+        <div className="setup-row setup-row--single">
           <label><span>Product type</span><select value={profile.siteType} onChange={(event) => setProfile((current) => ({ ...current, siteType: event.target.value as SiteType }))}>{SITE_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</select></label>
-          <label><span>Primary market</span><select value={profile.region} onChange={(event) => setProfile((current) => ({ ...current, region: event.target.value }))}><option>Global / unsure</option><option>India</option><option>European Union</option><option>United Kingdom</option><option>United States</option><option>Other</option></select></label>
         </div>
-        <button type="button" className="advanced-toggle" onClick={() => setExpandedSetup((value) => !value)}><SlidersHorizontal size={15} /> Product features <ChevronDown className={expandedSetup ? "rotate-180" : ""} size={15} /></button>
-        {expandedSetup ? <div className="feature-grid">{FEATURE_OPTIONS.map((option) => <FeatureToggle key={option.key} active={profile.features[option.key]} label={option.label} short={option.short} onClick={() => setProfile((current) => ({ ...current, features: { ...current.features, [option.key]: !current.features[option.key] } }))} />)}</div> : null}
-        <div className="pack-preview"><span>Rule packs</span><p>{enabledPacks.join(" · ")}</p></div>
-        {error ? <div className="form-error"><TriangleAlert size={16} />{error}</div> : null}
-        <button className="scan-button" type="submit" disabled={loading}>{loading ? <LoaderCircle className="animate-spin" size={18} /> : <Search size={18} />}{loading ? "Collecting public evidence…" : "Run evidence scan"}{!loading ? <ArrowRight size={18} /> : null}</button>
+        <button type="button" className="advanced-toggle" aria-expanded={expandedSetup} aria-controls="audit-options" onClick={() => setExpandedSetup((value) => !value)}><SlidersHorizontal size={15} /><span>Customize audit</span><small>{enabledPacks.length} rule packs selected</small><ChevronDown className={expandedSetup ? "rotate-180" : ""} size={15} /></button>
+        {expandedSetup ? <div id="audit-options" className="advanced-panel">
+          <label className="market-field"><span>Primary market</span><select value={profile.region} onChange={(event) => setProfile((current) => ({ ...current, region: event.target.value }))}><option>Global / unsure</option><option>India</option><option>European Union</option><option>United Kingdom</option><option>United States</option><option>Other</option></select></label>
+          <fieldset className="feature-fieldset"><legend>Product features</legend><div className="feature-grid">{FEATURE_OPTIONS.map((option) => <FeatureToggle key={option.key} active={profile.features[option.key]} label={option.label} onClick={() => setProfile((current) => ({ ...current, features: { ...current.features, [option.key]: !current.features[option.key] } }))} />)}</div></fieldset>
+          <div className="pack-preview"><span>Active rule packs</span><p>{enabledPacks.join(" · ")}</p></div>
+        </div> : null}
+        {error ? <div id="audit-url-error" className="form-error" role="alert"><TriangleAlert size={16} />{error}</div> : null}
+        {loading ? <div className="scan-progress" role="status" aria-live="polite"><div><span>Collecting and evaluating public evidence…</span><b>Usually under a minute</b></div><i><em /></i></div> : null}
+        <button className="scan-button" type="submit" disabled={loading}>{loading ? <LoaderCircle className="animate-spin" size={18} /> : <Search size={18} />}{loading ? "Generating your report…" : "Generate evidence report"}{!loading ? <ArrowRight size={18} /> : null}</button>
         <button className="sample-button" type="button" onClick={loadSample} disabled={loading}>View a complete sample report</button>
-        <p className="audit-disclaimer"><ShieldCheck size={14} /> Normal public requests only. No forms, logins, payloads or exploit attempts.</p>
+        <div id="audit-safety-note" className="audit-safety"><ShieldCheck size={15} /><div><strong>Public-safe by design</strong><span>No logins · No form submissions · No exploit payloads</span></div></div>
       </form>
     </section>
 
@@ -413,32 +448,41 @@ export default function Home() {
       <div className="method-step"><span>04</span><FileText size={21} /><h3>Resolve</h3><p>Give evidence, owners and practical fixes.</p></div>
     </section>
 
-    {report ? <section id="report" className="report-shell">
+    {report ? <section id="report" className="report-shell" tabIndex={-1} aria-label="Website audit report">
       <div className="report-masthead"><div><div className="eyebrow"><span>Audit report</span><span>{report.id}</span></div><h2>{new URL(report.url).hostname}</h2><p>{titleCase(report.siteType)} · Scanned {new Date(report.scannedAt).toLocaleString()}</p></div>
-        <div className="report-actions no-print"><button type="button" onClick={exportJson}><Download size={16} /> Export JSON</button><button type="button" onClick={() => window.print()}><Printer size={16} /> Save PDF</button><button type="button" onClick={() => { setReport(null); window.scrollTo({ top: 0, behavior: "smooth" }); }}><RefreshCw size={16} /> New audit</button></div></div>
+        <div className="report-actions no-print"><button type="button" onClick={exportJson}><Download size={16} /> Export JSON</button><button type="button" onClick={() => window.print()}><Printer size={16} /> Save PDF</button><button type="button" onClick={() => { setReport(null); window.scrollTo({ top: 0, behavior: "auto" }); }}><RefreshCw size={16} /> New audit</button></div></div>
+      {executiveSummary ? <div className={classNames("executive-banner", `executive-banner--${executiveSummary.tone}`)}>
+        <div className="executive-banner__verdict"><span>Executive verdict</span><strong>{executiveSummary.label}</strong><p>{executiveSummary.detail}</p></div>
+        <div className="executive-banner__priorities"><span>Priority action plan</span>{executiveSummary.priorities.length ? <ol>{executiveSummary.priorities.map((finding) => <li key={finding.id}><div><b>{finding.title}</b><small>{finding.owner} · {finding.effort} effort</small></div><em>{finding.status === "verified-issue" ? finding.severity : STATUS_LABELS[finding.status]}</em></li>)}</ol> : <p>No immediate remediation item was identified. Continue to owner verification.</p>}</div>
+      </div> : null}
       <div className="report-overview">
-        <div className="score-panel"><ScoreRing score={report.healthScore} label="health" /><ScoreRing score={report.coverageScore} label="coverage" tone="rust" /><div className="score-panel__copy"><span>READ THIS CORRECTLY</span><p>Health measures tested controls. Coverage shows how much of the applicable surface has strong evidence. Untested controls are never counted as passes.</p></div></div>
-        <div className="metric-card metric-card--dark"><span>Launch blockers</span><strong>{findingCounts.blockers}</strong><p>Critical or high verified issues</p></div>
+        <div className="score-panel"><ScoreRing score={report.healthScore} label="health" /><div className="coverage-meter"><div><span>Evidence coverage</span><strong>{report.coverageScore}%</strong></div><i role="progressbar" aria-label="Evidence coverage" aria-valuemin={0} aria-valuemax={100} aria-valuenow={report.coverageScore}><em style={{ width: `${report.coverageScore}%` }} /></i><p>Coverage measures proof collected—not quality. Untested controls never count as passes.</p></div></div>
+        <div className="metric-card metric-card--dark"><span>High-priority findings</span><strong>{findingCounts.blockers}</strong><p>Critical or high verified public issues</p></div>
         <div className="metric-card"><span>Verified issues</span><strong>{findingCounts.issues}</strong><p>Backed by observable evidence</p></div>
         <div className="metric-card"><span>Evidence gaps</span><strong>{findingCounts.evidence}</strong><p>Owner or manual review required</p></div>
       </div>
       <div className="report-layout">
-        <aside className="report-sidebar no-print"><div className="sidebar-label">Report sections</div>
-          <button className={activeCategory === "All" ? "active" : ""} onClick={() => setActiveCategory("All")}><span>All findings</span><b>{report.findings.length}</b></button>
-          {CATEGORY_ORDER.map((category) => { const count = report.findings.filter((finding) => finding.category === category).length; return count ? <button key={category} className={activeCategory === category ? "active" : ""} onClick={() => setActiveCategory(category)}><span>{category}</span><b>{count}</b></button> : null; })}
+        <aside className="report-sidebar no-print"><div className="sidebar-label">Filter findings</div>
+          <button type="button" aria-pressed={activeCategory === "All"} className={activeCategory === "All" ? "active" : ""} onClick={() => setActiveCategory("All")}><span>All findings</span><b>{report.findings.length}</b></button>
+          {CATEGORY_ORDER.map((category) => { const count = report.findings.filter((finding) => finding.category === category).length; return count ? <button type="button" aria-pressed={activeCategory === category} key={category} className={activeCategory === category ? "active" : ""} onClick={() => setActiveCategory(category)}><span>{category}</span><b>{count}</b></button> : null; })}
           <div className="sidebar-label sidebar-label--spaced">Category health</div>
-          <div className="category-bars">{report.categoryScores.filter((item) => item.applicable > 0).map((item) => <div key={item.category}><span>{item.category}<b>{item.score}</b></span><i><em style={{ width: `${item.score}%` }} /></i><small>{item.tested}/{item.applicable} tested</small></div>)}</div>
+          <div className="category-bars">{report.categoryScores.filter((item) => item.applicable > 0).map((item) => <div key={item.category}><span>{item.category}<b>{item.tested ? item.score : "—"}</b></span><i role="progressbar" aria-label={`${item.category} health`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={item.tested ? item.score : undefined}><em style={{ width: `${item.tested ? item.score : 0}%` }} /></i><small>{item.tested ? `${item.tested}/${item.applicable} tested` : "Not assessed"}</small></div>)}</div>
         </aside>
         <div className="findings-column">
+          <div className="mobile-category-tabs no-print" role="group" aria-label="Filter findings by category">
+            <button type="button" aria-pressed={activeCategory === "All"} className={activeCategory === "All" ? "active" : ""} onClick={() => setActiveCategory("All")}>All <b>{report.findings.length}</b></button>
+            {CATEGORY_ORDER.map((category) => { const count = report.findings.filter((finding) => finding.category === category).length; return count ? <button type="button" key={category} aria-pressed={activeCategory === category} className={activeCategory === category ? "active" : ""} onClick={() => setActiveCategory(category)}>{category} <b>{count}</b></button> : null; })}
+          </div>
           <div className="findings-toolbar"><div><span className="section-index">03</span><h2>{activeCategory === "All" ? "Prioritized findings" : activeCategory}</h2><p>{filteredFindings.length} results, sorted by severity</p></div>
             <label className="pass-toggle no-print"><input type="checkbox" checked={showPasses} onChange={(event) => setShowPasses(event.target.checked)} /><span /> Show passes</label></div>
+          <div className="findings-legend no-print"><span><i className="legend-dot legend-dot--issue" /> Verified issue</span><span><i className="legend-dot legend-dot--evidence" /> Evidence needed</span><span><i className="legend-dot legend-dot--pass" /> Verified pass</span></div>
           {filteredFindings.length ? <div className="finding-list">{filteredFindings.map((finding, index) => <FindingCard key={finding.id} finding={finding} index={index} />)}</div> : <div className="empty-findings"><FileCheck2 size={28} /><h3>No findings in this view</h3><p>Change the category or include verified passes.</p></div>}
           <div id="safety" className="limitations-panel"><div><LockKeyhole size={21} /><span>Scope & limitations</span></div><ul>{report.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul><p>Deeper vulnerability testing requires verified ownership, written scope and a separate authorized environment.</p></div>
         </div>
       </div>
     </section> : null}
 
-    <section className="coverage-section">
+    <section id="proof" className="coverage-section">
       <div className="coverage-heading"><span>Four levels of proof</span><h2>One product.<br />No false confidence.</h2><p>A URL can reveal a lot—but not everything. SiteAudit keeps each assessment honest by showing exactly how every result was established.</p></div>
       <div className="coverage-grid">
         <article><span>01</span><Globe2 /><h3>Public evidence</h3><p>Headers, HTML, links, documents, metadata and visible behavior.</p><b>Available now</b></article>
@@ -447,6 +491,7 @@ export default function Home() {
         <article><span>04</span><Gauge /><h3>Continuous proof</h3><p>Scheduled rescans, drift detection and operational evidence over time.</p><b>Monitoring</b></article>
       </div>
     </section>
-    <footer className="site-footer"><div className="brand brand--footer"><span className="brand__mark"><ScanSearch size={18} /></span><span className="brand__word">SiteAudit</span><span className="brand__tag">PRO</span></div><p>Evidence-based website and product readiness intelligence.</p><a href="#top">Start an audit <ArrowUpRight size={15} /></a></footer>
-  </main>;
+    </main>
+    <footer className="site-footer"><div className="brand brand--footer"><span className="brand__mark"><ScanSearch size={18} /></span><span className="brand__word">SiteAudit</span><span className="brand__tag">PRO</span></div><p>Evidence-based readiness intelligence. Responsible assessment only.</p><a href="#top">Start an audit <ArrowUpRight size={15} /></a></footer>
+  </>;
 }
